@@ -1,0 +1,17 @@
+{
+  "base_url": "https://iptv-org.github.io/iptv/countries",
+  "output": "output/index.m3u",
+  "log_dir": "logs",
+  "countries": ["cn", "sg", "ca"],
+  "check": {
+    "timeout": 10,
+    "require_extm3u": true,
+    "max_workers": 20,
+    "follow_redirect": true
+  },
+  "schedule": {
+    "enabled": false,
+    "interval_hours": 24
+  },
+  "dedup": true
+}
