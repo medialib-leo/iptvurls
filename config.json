@@ -2,7 +2,7 @@
   "base_url": "https://iptv-org.github.io/iptv/countries",
   "output": "output/index.m3u",
   "log_dir": "logs",
-  "countries": ["cn", "sg", "ca"],
+  "countries": ["hk", "sg", "tw"],
   "check": {
     "timeout": 10,
     "require_extm3u": true,

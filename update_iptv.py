@@ -63,24 +63,28 @@ def parse_m3u(text):
 
 
 def check_url(url, timeout, require_extm3u, follow_redirect):
-    """用 curl 校验地址: 返回 (valid: bool, status: str)。"""
+    """用 curl 校验地址: 返回 (valid: bool, status: str)。
+
+    响应体可能是二进制或非 UTF-8 编码，全程按 bytes 处理，避免解码异常。
+    """
     cmd = ["curl", "-s", "--max-time", str(timeout),
            "-w", STATUS_MARKER + "%{http_code}", url]
     if follow_redirect:
         cmd.insert(1, "-L")
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
+        proc = subprocess.run(cmd, capture_output=True, timeout=timeout + 5)
     except subprocess.TimeoutExpired:
         return False, "TIMEOUT"
     out = proc.stdout
-    if STATUS_MARKER in out:
-        body, status = out.rsplit(STATUS_MARKER, 1)
+    marker = STATUS_MARKER.encode("ascii")
+    if marker in out:
+        body, status_bytes = out.rsplit(marker, 1)
     else:
-        body, status = out, ""
-    status = status.strip()
+        body, status_bytes = out, b""
+    status = status_bytes.decode("ascii", errors="replace").strip()
     if status != "200":
         return False, status
-    if require_extm3u and "#EXTM3U" not in body:
+    if require_extm3u and b"#EXTM3U" not in body:
         return False, status + "(no-extm3u)"
     return True, status
 
@@ -105,11 +109,12 @@ def run_update(config, override_countries=None, override_output=None):
         url = f"{base_url}/{cc}.m3u"
         try:
             proc = subprocess.run(["curl", "-s", "-L", "--max-time", "30", url],
-                                  capture_output=True, text=True, timeout=35)
+                                  capture_output=True, timeout=35)
             if proc.returncode != 0 or not proc.stdout.strip():
                 log(f"下载失败: {url}")
                 continue
-            entries = parse_m3u(proc.stdout)
+            m3u_text = proc.stdout.decode("utf-8", errors="replace")
+            entries = parse_m3u(m3u_text)
             log(f"[{cc}] 解析到 {len(entries)} 个频道")
             for header, extra, play_url in entries:
                 pending.append((cc, header, extra, play_url))
@@ -134,7 +139,15 @@ def run_update(config, override_countries=None, override_output=None):
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = [pool.submit(worker, it) for it in pending]
         for fut in as_completed(futures):
-            cc, header, extra, play_url, valid, status = fut.result()
+            try:
+                cc, header, extra, play_url, valid, status = fut.result()
+            except Exception as e:
+                with lock:
+                    done += 1
+                log(f"校验异常，跳过该地址: {e}")
+                if done % 50 == 0 or done == total:
+                    log(f"进度 {done}/{total}  有效 {ok}")
+                continue
             with lock:
                 done += 1
                 if valid:
